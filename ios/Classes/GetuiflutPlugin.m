@@ -8,21 +8,35 @@
 
 @interface  GetuiflutPlugin()<GeTuiSdkDelegate,UNUserNotificationCenterDelegate,PKPushRegistryDelegate> {
     NSDictionary *_launchNotification;
+    
+    
+    NSData* _deviceToken;
 }
 
 @end
 
+static GetuiflutPlugin* _instance;
+
 @implementation GetuiflutPlugin
 
-+ (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar>*)registrar {
++ (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar>*)registrar {    
   FlutterMethodChannel* channel = [FlutterMethodChannel
       methodChannelWithName:@"getuiflut"
             binaryMessenger:[registrar messenger]];
   GetuiflutPlugin* instance = [[GetuiflutPlugin alloc] init];
+  _instance = instance;
   instance.channel = channel;
   [registrar addApplicationDelegate:instance];
   [registrar addMethodCallDelegate:instance channel:channel];
-  [instance registerRemoteNotification];
+}
+
++(instancetype) sharedObject
+{
+    return _instance;
+}
+
+- (void) saveDeviceToken:(NSData*)token {
+    _deviceToken = [token copy];
 }
 
 - (id)init {
@@ -61,8 +75,17 @@
 - (void)startSdk:(FlutterMethodCall*)call result:(FlutterResult)result {
     NSDictionary *ConfigurationInfo = call.arguments;
     // [ GTSdk ]：使用APPID/APPKEY/APPSECRENT启动个推
+    if( _deviceToken != nil ){
+        NSString *token = [self getHexStringForData:_deviceToken];
+        NSLog(@"\n>>>[DeviceToken(NSString)]: %@\n\n", token);
+        [GeTuiSdk registerDeviceTokenData: _deviceToken];
+
+        // send event
+        [_channel invokeMethod:@"onRegisterDeviceToken" arguments:token];
+    }
     [GeTuiSdk startSdkWithAppId:ConfigurationInfo[@"appId"] appKey:ConfigurationInfo[@"appKey"] appSecret:ConfigurationInfo[@"appSecret"] delegate:self];
-    
+        
+
     // 注册VoipToken
     [self voipRegistration];
 }
@@ -80,6 +103,7 @@
 #if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_10_0 // Xcode 8编译会调用
         if (@available(iOS 10.0, *)) {
             UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+            
             center.delegate = self;
             [center requestAuthorizationWithOptions:(UNAuthorizationOptionBadge | UNAuthorizationOptionSound | UNAuthorizationOptionAlert | UNAuthorizationOptionCarPlay) completionHandler:^(BOOL granted, NSError *_Nullable error) {
                 if (!error) {
@@ -119,8 +143,9 @@
 
 /** 远程通知注册成功委托 */
 - (void)application:(UIApplication *)application didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken {
-    // [3]:向个推服务器注册deviceToken 为了方便开发者，建议使用新方法
-    [GeTuiSdk registerDeviceTokenData:deviceToken];
+    // [3]:向个推服务器注册deviceToken 为了方便开发者，建议使用 saveDeviceToken
+    _deviceToken = [deviceToken copy];
+    // [GeTuiSdk registerDeviceTokenData:deviceToken];
     NSString *token = [self getHexStringForData:deviceToken];
     NSLog(@"\n>>>[DeviceToken(NSString)]: %@\n\n", token);
     [_channel invokeMethod:@"onRegisterDeviceToken" arguments:token];
@@ -284,13 +309,17 @@
 #pragma mark - utils
 
 - (NSString *)getHexStringForData:(NSData *)data {
-    NSUInteger len = [data length];
-        char *chars = (char *) [data bytes];
-        NSMutableString *hexString = [[NSMutableString alloc] init];
-        for (NSUInteger i = 0; i < len; i++) {
-            [hexString appendString:[NSString stringWithFormat:@"%0.2hhx", chars[i]]];
-        }
-        return hexString;
+  NSUInteger dataLength = data.length;
+  if (dataLength == 0) {
+    return nil;
+  }
+
+  const unsigned char *dataBuffer = (const unsigned char *)data.bytes;
+  NSMutableString *hexString  = [NSMutableString stringWithCapacity:(dataLength * 2)];
+  for (int i = 0; i < dataLength; ++i) {
+    [hexString appendFormat:@"%02x", dataBuffer[i]];
+  }
+  return [hexString copy];
 }
 
 @end

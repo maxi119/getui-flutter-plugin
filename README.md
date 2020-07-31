@@ -194,4 +194,19 @@ Getuiflut().addEventHandler(
     );
 ```
 
+in AppDelegate.swfit
+import pckage
+```swift
+import getuiflut
+```
+
+saveDeviceToekn in RemoteNotifications callback
+```swift
+  override func application(_ application: UIApplication, 
+                            didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        NSLog("RemoteNotification Response")
+        GetuiflutPlugin.sharedObject().saveDeviceToken( deviceToken )
+    }
+```
+
 
